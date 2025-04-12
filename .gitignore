@@ -1,0 +1,52 @@
+/target/
+**/*.rs.bk
+/Cargo.lock
+/.cargo/
+.cargo/
+/rust-toolchain.toml
+/rust-toolchain
+*.log
+
+# VS Code
+/.vscode/
+/*.code-workspace
+
+# JetBrains (CLion, IntelliJ, etc.)
+.idea/
+*.iml
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim / Neovim
+*.swp
+*.swo
+*.un~
+Session.vim
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# macOS
+.DS_Store
+
+
+# Coverage tools
+/coverage/
+/htmlcov/
+*.lcov
+
+# Clippy lints
+.clippy.toml
+
+# Nextest test output
+/target/nextest/
+
+/.env
+.env.*
+*.bak
+/some
+
