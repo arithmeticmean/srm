@@ -1,18 +1,28 @@
 [package]
 name = "srm"
 version = "0.1.0"
-edition = "2024"
-
-[profile.release]
-opt-level = 3
-lto = true              
-codegen-units = 1       
-panic = "abort"         
-strip = true            
+edition = "2024"                
+authors = ["arithmeticmean <satyanand6996@gmail.com>"]
+description = "A secure and safe alternative to rm for recursively managing file deletion or movement"
+readme = "README.md"
+license = "MIT OR Apache-2.0"  
+repository = "https://github.com/arithmeticmean/srm"
+homepage = "https://github.com/arithmeticmean/srm"
+keywords = ["cli", "filesystem", "rm", "secure-delete"]
+categories = ["command-line-utilities"]
+exclude = ["/target", "*.log"]
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 thiserror = "2.0.12"
+xdg = "2.5.2"
 
 [dev-dependencies]
 tempfile = "3"
 
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

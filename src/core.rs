@@ -1,98 +1,36 @@
-use super::cli::SRMArgs;
-use super::error::RMSCliError;
-use super::error::RMSError;
-use crate::error::ExitCode;
+use crate::error::RMSRuntimeError;
 use std::fmt::Write;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-static VERSION: &str = env!("CARGO_PKG_VERSION");
-
-static HELP_SHORT: &str = "\
-                          Try \"srm --help\" for more information
-                          ";
-
-static HELP_LONG: &str = "\
-  Usage: srm [OPTION]... [FILE]...
-Move FILE(s) to Trash.
-
-  -f, --force           ignore nonexistent files and arguments, never prompt
-  -r, -R, --recursive   remove directories and their contents recursively
-  -d, --dir             remove empty directories
-  -v, --verbose         explain what is being done
-      --help        display this help and exit
-      --version     output version information and exit
-";
-
-pub fn srm_run() {
-    let mut exitcode = ExitCode::Success;
-
-    match SRMArgs::parse_cmd_from_env() {
-        Ok(args) => handle_args(&args, &mut exitcode),
-        Err(err) => match err {
-            RMSCliError::Help => println!("{HELP_LONG}"),
-            RMSCliError::Version => println!("{VERSION}"),
-            _ => {
-                eprintln!("{err}\n{HELP_SHORT}");
-                exitcode.update(ExitCode::UsageError);
-            }
-        },
-    }
-
-    std::process::exit(exitcode.code());
-}
-
-const DESTPATH: &str = "some/dir";
-
-fn handle_args(args: &SRMArgs, exitcode: &mut ExitCode) {
-    println!("{:?}", args);
-    for srcpath in args.paths.iter() {
-        match rms_recursive(
-            srcpath,
-            Path::new(DESTPATH),
-            args.isverbose,
-            args.isdirectory,
-            args.isrecursive,
-        ) {
-            Ok(_) => (),
-            Err(e) => {
-                println!("{}", e);
-                exitcode.update(ExitCode::RuntimeError);
-            }
-        }
-    }
-}
-
-fn rms_empty_dir(srcpath: &Path, destpath: &Path, verbose: bool) -> Result<(), RMSError> {
-    if !srcpath.is_dir() {
-        return Err(RMSError::SrcError(
-            srcpath.to_path_buf(),
-            std::io::Error::new(ErrorKind::NotADirectory, "not a directory"),
-        ));
-    }
-
-    fs::create_dir_all(destpath).map_err(|e| RMSError::DestError(destpath.to_path_buf(), e))?;
+fn srm_empty_dir(
+    srcpath: &Path,
+    destpath: &Path,
+    verbose: bool,
+) -> Result<PathBuf, RMSRuntimeError> {
+    fs::create_dir_all(destpath)
+        .map_err(|e| RMSRuntimeError::DestError(destpath.to_path_buf(), e))?;
 
     let src_path = srcpath
         .file_name()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid path"))
-        .map_err(|e| RMSError::SrcError(srcpath.to_path_buf(), e))?;
+        .map_err(|e| RMSRuntimeError::SrcError(srcpath.to_path_buf(), e))?;
 
     let tmp_dst_path = destpath.join(src_path);
     let dst_path = next_available_filename(&tmp_dst_path)
-        .map_err(|e| RMSError::DestError(tmp_dst_path.to_path_buf(), e))?;
+        .map_err(|e| RMSRuntimeError::DestError(tmp_dst_path.to_path_buf(), e))?;
 
     match fs::create_dir(&dst_path) {
         Ok(_) => {
             if let Err(e) = fs::remove_dir(srcpath) {
                 fs::remove_dir(&dst_path)
-                    .map_err(|e| RMSError::DestError(dst_path.to_path_buf(), e))?;
-                return Err(RMSError::SrcError(srcpath.to_path_buf(), e));
+                    .map_err(|e| RMSRuntimeError::DestError(dst_path.to_path_buf(), e))?;
+                return Err(RMSRuntimeError::SrcError(srcpath.to_path_buf(), e));
             }
         }
         Err(e) => {
-            return Err(RMSError::DestError(dst_path, e));
+            return Err(RMSRuntimeError::DestError(dst_path, e));
         }
     }
 
@@ -100,42 +38,46 @@ fn rms_empty_dir(srcpath: &Path, destpath: &Path, verbose: bool) -> Result<(), R
         println!("removed '{}'", srcpath.display());
     }
 
-    Ok(())
+    Ok(dst_path)
 }
 
-fn rms_file(srcpath: &Path, destpath: &Path, verbose: bool) -> Result<(), RMSError> {
+fn srm_file(srcpath: &Path, destpath: &Path, verbose: bool) -> Result<PathBuf, RMSRuntimeError> {
     if srcpath.is_dir() {
-        return Err(RMSError::SrcError(
+        return Err(RMSRuntimeError::SrcError(
             srcpath.to_path_buf(),
-            std::io::Error::new(std::io::ErrorKind::IsADirectory, "is a directory"),
+            std::io::Error::from(ErrorKind::IsADirectory),
         ));
     }
 
-    fs::create_dir_all(destpath).map_err(|e| RMSError::SrcError(srcpath.to_path_buf(), e))?;
+    fs::create_dir_all(destpath)
+        .map_err(|e| RMSRuntimeError::SrcError(srcpath.to_path_buf(), e))?;
 
     let src_file_name = srcpath
         .file_name()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid path"))
-        .map_err(|e| RMSError::SrcError(srcpath.to_path_buf(), e))?;
+        .map_err(|e| RMSRuntimeError::SrcError(srcpath.to_path_buf(), e))?;
 
     let tmp_dst_path = destpath.join(src_file_name);
-    let dst_path = next_available_filename(&tmp_dst_path)
-        .map_err(|e| RMSError::DestError(tmp_dst_path.to_path_buf(), e))?;
 
-    fs::rename(srcpath, &dst_path).map_err(|e| RMSError::SrcError(srcpath.to_path_buf(), e))?;
+    let dst_path = next_available_filename(&tmp_dst_path)
+        .map_err(|e| RMSRuntimeError::DestError(tmp_dst_path.to_path_buf(), e))?;
+
+    fs::rename(srcpath, &dst_path)
+        .map_err(|e| RMSRuntimeError::SrcError(srcpath.to_path_buf(), e))?;
 
     if verbose {
         println!("removed '{}'", srcpath.display());
     }
-    Ok(())
+    Ok(dst_path)
 }
-fn rms_recursive(
+
+fn srm_recursive(
     srcpath: &Path,
     destpath: &Path,
     verbose: bool,
     directory: bool,
     recursive: bool,
-) -> Result<(), RMSError> {
+) -> Result<PathBuf, RMSRuntimeError> {
     if srcpath.is_dir() {
         if recursive {
             let src_name = srcpath
@@ -143,34 +85,55 @@ fn rms_recursive(
                 .ok_or_else(|| {
                     std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid path")
                 })
-                .map_err(|e| RMSError::SrcError(srcpath.to_path_buf(), e))?;
+                .map_err(|e| RMSRuntimeError::SrcError(srcpath.to_path_buf(), e))?;
 
-            let dst_path = destpath.join(src_name);
+            let tmp_dst_path = destpath.join(src_name);
 
-            fs::create_dir_all(&dst_path).map_err(|e| RMSError::DestError(dst_path.clone(), e))?;
+            let dst_path = next_available_filename(&tmp_dst_path)
+                .map_err(|e| RMSRuntimeError::DestError(tmp_dst_path.to_path_buf(), e))?;
+
+            fs::create_dir_all(&dst_path)
+                .map_err(|e| RMSRuntimeError::DestError(dst_path.clone(), e))?;
 
             for entry in srcpath
                 .read_dir()
-                .map_err(|e| RMSError::SrcError(srcpath.to_path_buf(), e))?
+                .map_err(|e| RMSRuntimeError::SrcError(srcpath.to_path_buf(), e))?
             {
-                let entry = entry.map_err(|e| RMSError::SrcError(PathBuf::new(), e))?;
-                rms_recursive(&entry.path(), &dst_path, verbose, directory, recursive)
-                    .unwrap_or_else(|e| println!("{}", e));
+                let entry = entry.map_err(|e| RMSRuntimeError::SrcError(PathBuf::new(), e))?;
+                if let Err(e) =
+                    srm_recursive(&entry.path(), &dst_path, verbose, directory, recursive)
+                {
+                    println!("{}", e);
+                }
             }
 
-            fs::remove_dir(srcpath).map_err(|e| RMSError::SrcError(srcpath.to_path_buf(), e))?;
-            return Ok(());
+            fs::remove_dir(srcpath)
+                .map_err(|e| RMSRuntimeError::SrcError(srcpath.to_path_buf(), e))?;
+
+            return Ok(dst_path);
         }
 
         if directory {
-            rms_empty_dir(srcpath, destpath, verbose).unwrap_or_else(|e| println!("{}", e));
-            return Ok(());
+            return srm_empty_dir(srcpath, destpath, verbose);
         }
     }
 
-    rms_file(srcpath, destpath, verbose)?;
+    return srm_file(srcpath, destpath, verbose);
+}
 
-    Ok(())
+pub fn srm(
+    srcpath: &Path,
+    destpath: &Path,
+    isverbose: bool,
+    isdirectory: bool,
+    isrecursive: bool,
+) -> Result<(PathBuf, PathBuf), RMSRuntimeError> {
+    let src_path = srcpath
+        .canonicalize()
+        .map_err(|e| RMSRuntimeError::SrcError(srcpath.to_path_buf(), e))?;
+
+    srm_recursive(&src_path, destpath, isverbose, isdirectory, isrecursive)
+        .map(|dst_path| (src_path, dst_path))
 }
 
 fn next_available_filename<P: AsRef<Path>>(original: P) -> std::io::Result<PathBuf> {
@@ -213,7 +176,6 @@ fn next_available_filename<P: AsRef<Path>>(original: P) -> std::io::Result<PathB
 mod test {
     use super::*;
     use std::fs::File;
-    use tempfile::TempDir;
     use tempfile::tempdir;
 
     #[test]
@@ -225,7 +187,7 @@ mod test {
         fs::create_dir(&src_dir).unwrap();
         fs::create_dir(&dst_dir).unwrap();
 
-        let result = rms_empty_dir(&src_dir, &dst_dir, false);
+        let result = srm_empty_dir(&src_dir, &dst_dir, false);
         assert!(result.is_ok());
 
         let moved_dir = dst_dir.join("empty_dir");
@@ -243,7 +205,7 @@ mod test {
         fs::write(&fake_dir, "I'm not a dir").unwrap();
         fs::create_dir(&dst_dir).unwrap();
 
-        let result = rms_empty_dir(&fake_dir, &dst_dir, false);
+        let result = srm_empty_dir(&fake_dir, &dst_dir, false);
         assert!(result.is_err());
     }
 
@@ -257,7 +219,7 @@ mod test {
         fs::write(src_dir.join("file.txt"), "data").unwrap();
         fs::create_dir(&dst_dir).unwrap();
 
-        let result = rms_empty_dir(&src_dir, &dst_dir, false);
+        let result = srm_empty_dir(&src_dir, &dst_dir, false);
         assert!(result.is_err());
     }
 
@@ -269,7 +231,7 @@ mod test {
 
         fs::create_dir(&src_dir).unwrap();
 
-        let result = rms_empty_dir(&src_dir, &dst_dir, false);
+        let result = srm_empty_dir(&src_dir, &dst_dir, false);
         assert!(result.is_ok());
 
         let moved_dir = dst_dir.join("to_move");
@@ -280,7 +242,7 @@ mod test {
     #[test]
     fn test_rms_empty_dir_fails_if_source_has_no_name() {
         // Simulate invalid path like root ("/") — has no basename
-        let result = rms_empty_dir(Path::new("/"), Path::new("/tmp"), false);
+        let result = srm_empty_dir(Path::new("/"), Path::new("/tmp"), false);
         assert!(result.is_err());
     }
 
@@ -298,7 +260,7 @@ mod test {
         let path = file.path().to_path_buf();
         let dest = tempdir().unwrap();
 
-        let result = rms_recursive(&path, dest.path(), false, false, true);
+        let result = srm_recursive(&path, dest.path(), false, false, true);
         assert!(result.is_ok());
         assert!(!test_path_exists(&path));
     }
@@ -308,7 +270,7 @@ mod test {
         let dir = tempdir().unwrap();
         let path = dir.path().to_path_buf();
         let dest = tempdir().unwrap();
-        let result = rms_recursive(&path, dest.path(), false, true, false);
+        let result = srm_recursive(&path, dest.path(), false, true, false);
         assert!(result.is_ok());
         assert!(!test_path_exists(&path));
     }
@@ -322,7 +284,7 @@ mod test {
         let path = dir.path().to_path_buf();
         let dest = tempdir().unwrap();
 
-        let result = rms_recursive(&path, dest.path(), false, false, true);
+        let result = srm_recursive(&path, dest.path(), false, false, true);
         assert!(result.is_ok());
         assert!(!test_path_exists(&path));
     }
@@ -333,7 +295,7 @@ mod test {
         let path = dir.path().to_path_buf();
         let dest = tempdir().unwrap();
 
-        let result = rms_recursive(&path, dest.path(), false, false, false);
+        let result = srm_recursive(&path, dest.path(), false, false, false);
         assert!(result.is_err());
         assert!(test_path_exists(&path));
     }
@@ -351,7 +313,7 @@ mod test {
         let dest = tempdir().unwrap();
         let dest_path = dest.path().to_path_buf();
 
-        let result = rms_recursive(&path, dest.path(), false, false, true);
+        let result = srm_recursive(&path, dest.path(), false, false, true);
         assert!(result.is_ok());
         assert!(dest_path.join("testfile").exists());
 
@@ -374,7 +336,7 @@ mod test {
         let path = dir.path().to_path_buf();
         let dest = tempdir().unwrap();
 
-        let result = rms_recursive(&path, dest.path(), false, false, true);
+        let result = srm_recursive(&path, dest.path(), false, false, true);
         assert!(result.is_err());
 
         // Restore permissions
@@ -395,7 +357,7 @@ mod test {
         fs::set_permissions(parent_dir.path(), perms).unwrap();
 
         let dest = tempdir().unwrap();
-        let result = rms_recursive(&child_file, dest.path(), false, false, true);
+        let result = srm_recursive(&child_file, dest.path(), false, false, true);
         assert!(result.is_err());
 
         // Restore permission so tempdir can clean up
@@ -415,7 +377,7 @@ mod test {
         fs::set_permissions(dir.path(), perms).unwrap();
 
         let dest = tempdir().unwrap();
-        let result = rms_recursive(&nested_file, dest.path(), false, false, true);
+        let result = srm_recursive(&nested_file, dest.path(), false, false, true);
         assert!(result.is_err());
 
         let mut perms = fs::metadata(dir.path()).unwrap().permissions();
@@ -435,7 +397,7 @@ mod test {
         fs::set_permissions(&file_path, perms).unwrap();
 
         let dest = tempdir().unwrap();
-        let result = rms_recursive(&file_path, dest.path(), false, false, true);
+        let result = srm_recursive(&file_path, dest.path(), false, false, true);
         assert!(result.is_ok());
         assert!(!file_path.exists());
     }
@@ -451,7 +413,7 @@ mod test {
         fs::set_permissions(&readonly_dir, perms).unwrap();
 
         let dest = tempdir().unwrap();
-        let result = rms_recursive(&readonly_dir, dest.path(), false, true, false);
+        let result = srm_recursive(&readonly_dir, dest.path(), false, true, false);
         assert!(result.is_ok());
         assert!(!readonly_dir.exists());
     }
@@ -472,7 +434,7 @@ mod test {
         fs::set_permissions(&file, fs::Permissions::from_mode(0o400)).unwrap();
 
         let dest = tempdir().unwrap();
-        let result = rms_recursive(&dir_a, dest.path(), false, false, true);
+        let result = srm_recursive(&dir_a, dest.path(), false, false, true);
         assert!(result.is_err());
         assert!(dir_a.exists());
     }
@@ -492,7 +454,7 @@ mod test {
         fs::set_permissions(&file, fs::Permissions::from_mode(0o400)).unwrap();
 
         let dest = tempdir().unwrap();
-        let result = rms_recursive(&dir_a, dest.path(), false, false, true);
+        let result = srm_recursive(&dir_a, dest.path(), false, false, true);
         assert!(result.is_ok());
         assert!(!dir_a.exists());
     }

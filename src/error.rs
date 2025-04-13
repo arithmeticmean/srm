@@ -1,13 +1,20 @@
 use std::path::PathBuf;
 use thiserror::Error;
+use xdg::BaseDirectoriesError;
 
 #[derive(Debug, Error)]
-pub enum RMSCliError {
+pub enum RMSError {
     #[error("rms: missing operand")]
     MissingOperand,
 
     #[error("rms: unreconised option '{0}'")]
     InvalidOption(String),
+
+    #[error("rms: trash error: '{0}'")]
+    TrashConfigError(BaseDirectoriesError),
+
+    #[error("rms: falied to create '{0}': '{1}'")]
+    TrashDirError(PathBuf, std::io::Error),
 
     #[error("")]
     Help,
@@ -17,12 +24,15 @@ pub enum RMSCliError {
 }
 
 #[derive(Debug, Error)]
-pub enum RMSError {
+pub enum RMSRuntimeError {
     #[error("rms: cannot remove '{0}': {1}")]
     SrcError(PathBuf, std::io::Error),
 
-    #[error("rms: cannot move '{0}': {1}")]
+    #[error("rms: cannot move '{0}': trash error: {1}")]
     DestError(PathBuf, std::io::Error),
+
+    #[error("rms: failed to create trashinfo file '{0}' would not be able to use restore: {1}")]
+    TrashError(PathBuf, std::io::Error),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
