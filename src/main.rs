@@ -4,7 +4,7 @@ mod error;
 mod trash;
 
 use crate::cli::*;
-use crate::error::{ExitCode, RMSError};
+use crate::error::{ExitCode, SRMError};
 fn main() {
     srm_run();
 }
@@ -31,15 +31,19 @@ pub fn srm_run() {
     let mut exitcode = ExitCode::Success;
 
     match SRMArgs::build() {
-        Ok(args) => args.handle_args(&mut exitcode),
-        Err(err) => match err {
-            RMSError::Help => println!("{HELP_LONG}"),
-            RMSError::Version => println!("{VERSION}"),
-            _ => {
-                eprintln!("{err}\n{HELP_SHORT}");
-                exitcode.update(ExitCode::UsageError);
+        Ok(args) => {
+            if let Err(e) = args.handle_command() {
+                println!("{e}");
+                exitcode.update(ExitCode::RuntimeError);
             }
-        },
+        }
+
+        Err(SRMError::Help) => println!("{HELP_LONG}"),
+        Err(SRMError::Version) => println!("{VERSION}"),
+        Err(e) => {
+            eprintln!("{e}\n{HELP_SHORT}");
+            exitcode.update(ExitCode::UsageError);
+        }
     }
     std::process::exit(exitcode.code());
 }

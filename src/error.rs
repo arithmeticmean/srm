@@ -3,17 +3,17 @@ use thiserror::Error;
 use xdg::BaseDirectoriesError;
 
 #[derive(Debug, Error)]
-pub enum RMSError {
-    #[error("rms: missing operand")]
+pub enum SRMError {
+    #[error("srm: missing operand")]
     MissingOperand,
 
-    #[error("rms: unreconised option '{0}'")]
+    #[error("srm: unreconised option '{0}'")]
     InvalidOption(String),
 
-    #[error("rms: trash error: '{0}'")]
+    #[error("srm: trash error: '{0}'")]
     TrashConfigError(BaseDirectoriesError),
 
-    #[error("rms: falied to create '{0}': '{1}'")]
+    #[error("srm: falied to create '{0}': '{1}'")]
     TrashDirError(PathBuf, std::io::Error),
 
     #[error("")]
@@ -24,15 +24,15 @@ pub enum RMSError {
 }
 
 #[derive(Debug, Error)]
-pub enum RMSRuntimeError {
-    #[error("rms: cannot remove '{0}': {1}")]
+pub enum SRMRuntimeError {
+    #[error("srm: cannot remove '{0}': {1}")]
     SrcError(PathBuf, std::io::Error),
 
-    #[error("rms: cannot move '{0}': trash error: {1}")]
+    #[error("srm: cannot move '{0}': trash error: {1}")]
     DestError(PathBuf, std::io::Error),
 
-    #[error("rms: failed to create trashinfo file '{0}' would not be able to use restore: {1}")]
-    TrashError(PathBuf, std::io::Error),
+    #[error("srm: failed to create trashinfo file '{0}' would not be able to use restore: {1}")]
+    TrashInfoError(PathBuf, std::io::Error),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

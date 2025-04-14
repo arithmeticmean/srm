@@ -3,7 +3,7 @@ name = "srm"
 version = "0.1.0"
 edition = "2024"                
 authors = ["arithmeticmean <satyanand6996@gmail.com>"]
-description = "A secure and safe alternative to rm for recursively managing file deletion or movement"
+description = "A secure safe alternative to rm for file deletion."
 readme = "README.md"
 license = "MIT OR Apache-2.0"  
 repository = "https://github.com/arithmeticmean/srm"
@@ -16,6 +16,7 @@ exclude = ["/target", "*.log"]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 thiserror = "2.0.12"
 xdg = "2.5.2"
+zbus = { version = "5.5.0", features = ["blocking"] }
 
 [dev-dependencies]
 tempfile = "3"
