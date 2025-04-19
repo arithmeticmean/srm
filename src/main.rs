@@ -4,7 +4,7 @@ mod error;
 mod trash;
 
 use crate::cli::*;
-use crate::error::{ExitCode, SRMError};
+use crate::error::{ExitCode, SRMCliError};
 fn main() {
     srm_run();
 }
@@ -32,14 +32,13 @@ pub fn srm_run() {
 
     match SRMArgs::build() {
         Ok(args) => {
-            if let Err(e) = args.handle_command() {
-                println!("{e}");
+            if let Err(_) = args.handle_command() {
                 exitcode.update(ExitCode::RuntimeError);
             }
         }
 
-        Err(SRMError::Help) => println!("{HELP_LONG}"),
-        Err(SRMError::Version) => println!("{VERSION}"),
+        Err(SRMCliError::Help) => println!("{HELP_LONG}"),
+        Err(SRMCliError::Version) => println!("{VERSION}"),
         Err(e) => {
             eprintln!("{e}\n{HELP_SHORT}");
             exitcode.update(ExitCode::UsageError);

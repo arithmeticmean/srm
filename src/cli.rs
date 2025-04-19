@@ -1,5 +1,5 @@
-use crate::core::srm;
-use crate::error::{SRMError, SRMRuntimeError};
+use crate::core::safe_remove;
+use crate::error::{SRMCliError, SRMRuntimeError};
 use crate::trash::Trash;
 use std::path::PathBuf;
 
@@ -13,14 +13,14 @@ struct SRMCliArgs {
 }
 
 impl SRMCliArgs {
-    fn build() -> Result<SRMCliArgs, SRMError> {
+    fn build() -> Result<SRMCliArgs, SRMCliError> {
         let mut argsiter = std::env::args();
         argsiter.next();
 
         Self::parse_args(argsiter)
     }
 
-    fn parse_args<I>(argsiter: I) -> Result<SRMCliArgs, SRMError>
+    fn parse_args<I>(argsiter: I) -> Result<SRMCliArgs, SRMCliError>
     where
         I: Iterator<Item = String>,
     {
@@ -34,13 +34,13 @@ impl SRMCliArgs {
 
         for arg in argsiter {
             match arg.as_str() {
-                "--help" => return Err(SRMError::Help),
-                "--version" => return Err(SRMError::Version),
+                "--help" => return Err(SRMCliError::Help),
+                "--version" => return Err(SRMCliError::Version),
                 "--recursive" => args.isrecursive = true,
                 "--dir" => args.isdirectory = true,
                 "--force" => args.isforce = true,
                 "--verbose" => args.isverbose = true,
-                _ if arg.starts_with("--") => return Err(SRMError::InvalidOption(arg)),
+                _ if arg.starts_with("--") => return Err(SRMCliError::InvalidOption(arg)),
                 _ if arg.starts_with("-") && arg.len() > 1 => {
                     for c in arg.chars().skip(1) {
                         match c {
@@ -48,7 +48,7 @@ impl SRMCliArgs {
                             'd' => args.isdirectory = true,
                             'f' => args.isforce = true,
                             'v' => args.isverbose = true,
-                            _ => return Err(SRMError::InvalidOption(format!("{c}"))),
+                            _ => return Err(SRMCliError::InvalidOption(format!("{c}"))),
                         }
                     }
                 }
@@ -57,7 +57,7 @@ impl SRMCliArgs {
         }
 
         if args.paths.is_empty() {
-            return Err(SRMError::MissingOperand);
+            return Err(SRMCliError::MissingOperand);
         }
 
         Ok(args)
@@ -74,7 +74,7 @@ pub struct SRMArgs {
 }
 
 impl SRMArgs {
-    pub fn build() -> Result<SRMArgs, SRMError> {
+    pub fn build() -> Result<SRMArgs, SRMCliError> {
         let cli_args = SRMCliArgs::build()?;
 
         let trash = crate::trash::Trash::ensure_trash_dirs()?;
@@ -89,18 +89,27 @@ impl SRMArgs {
         })
     }
 
-    pub fn handle_command(&self) -> Result<(), SRMRuntimeError> {
+    pub fn handle_command(&self) -> Result<(), ()> {
         for srcpath in self.srcpaths.iter() {
-            let _ = srm(
+            let src_realpath = srcpath
+                .canonicalize()
+                .map_err(|e| SRMRuntimeError::new_src_error(srcpath.to_path_buf(), e))
+                .map_err(|e| eprintln!("{}", e))?;
+
+            match safe_remove(
                 srcpath,
                 &self.trash.files,
                 self.isverbose,
                 self.isdirectory,
                 self.isrecursive,
-            )
-            .map(|(ref src_path, ref dst_path)| {
-                self.trash.create_trash_info_file(src_path, dst_path)
-            })?;
+            ) {
+                Ok(destpath) => {
+                    if let Err(e) = self.trash.create_trash_info_file(src_realpath, &destpath) {
+                        eprintln!("{}", e)
+                    }
+                }
+                Err(e) => eprintln!("{}", e),
+            }
         }
         Ok(())
     }

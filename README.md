@@ -26,7 +26,7 @@ This allows users to recover accidentally "removed" files, making `srm` a more f
 For now, clone and build from source:
 
 ```bash
-cargo install -git https://github.com/yourusername/safe-remove.git
+cargo install --git https://github.com/arithmeticmean/safe-remove.git
 ```
 
 ## 📂 Trash Specification
